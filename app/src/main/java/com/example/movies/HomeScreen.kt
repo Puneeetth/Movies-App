@@ -1,111 +1,110 @@
 package com.example.movies
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import androidx.navigation.NavHostController
-import com.example.movies.data.DummyData
+import com.example.movies.api.RetrofitClient
+import com.example.movies.model.Movie
 import com.example.movies.ui.theme.MovieCard
 
 @Composable
 fun HomeScreen(navController: NavController) {
-    var movies by remember { mutableStateOf(DummyData.movies) }
-    var selectedIndustry by remember { mutableStateOf("All")}
+    var movies by remember { mutableStateOf<List<Movie>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    
+    var selectedIndustry by remember { mutableStateOf("All") }
     var searchQuery by remember { mutableStateOf("") }
     var sortType by remember { mutableStateOf("NONE") }
 
+    LaunchedEffect(Unit) {
+        try {
+            movies = RetrofitClient.api.getAllMovies()
+            errorMessage = null
+        } catch (e: Exception) {
+            errorMessage = "Failed to load movies: ${e.localizedMessage}"
+            e.printStackTrace()
+        } finally {
+            isLoading = false
+        }
+    }
 
-    Column {
+    Column(modifier = Modifier.fillMaxSize()) {
         TextField(
             value = searchQuery,
-            onValueChange = {searchQuery = it},
+            onValueChange = { searchQuery = it },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp),
-            placeholder = {Text("Search Movie or Actor")}
+            placeholder = { Text("Search Movie or Actor") }
         )
+        
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            listOf("All","Telugu","Tamil").forEach { industry ->
-                Button(onClick = {
-                    selectedIndustry = industry
-                }) { Text(industry)}
+            listOf("All", "Telugu", "Tamil").forEach { industry ->
+                FilterChip(
+                    selected = selectedIndustry == industry,
+                    onClick = { selectedIndustry = industry },
+                    label = { Text(industry) }
+                )
             }
         }
-//        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-//            Button(onClick = {
-//                movies = movies.sortedByDescending { it.rating }
-//            }) {
-//                Text("Sort by Rating")
-//            }
-//
-//            Button(onClick = {
-//                movies = movies.sortedByDescending { it.collection }
-//            }) {
-//                Text("Sort by Collection")
-//            }
-//
-//            Button(onClick = {
-//                movies = movies.sortedByDescending { it.year }
-//            }) {
-//                Text("Sort by Year")
-//            }
-//        }
+
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            Button(onClick = { sortType = "RATING" }) {
-                Text("Sort by Rating")
-            }
-
-            Button(onClick = { sortType = "COLLECTION" }) {
-                Text("Sort by Collection")
-            }
-
-            Button(onClick = { sortType = "YEAR" }) {
-                Text("Sort by Year")
-            }
+            AssistChip(onClick = { sortType = "RATING" }, label = { Text("Rating") })
+            AssistChip(onClick = { sortType = "COLLECTION" }, label = { Text("Collection") })
+            AssistChip(onClick = { sortType = "YEAR" }, label = { Text("Year") })
         }
 
-        val filteredMovies = DummyData.movies
-            .filter {
-                (selectedIndustry == "All" || it.industry == selectedIndustry) &&
-                        (it.name.contains(searchQuery, true) ||
-                                it.actor.contains(searchQuery, true))
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
             }
-            .let {
-                when (sortType) {
-                    "RATING" -> it.sortedByDescending { it.rating }
-                    "COLLECTION" -> it.sortedByDescending { it.collection }
-                    "YEAR" -> it.sortedByDescending { it.year }
-                    else -> it
+        } else if (errorMessage != null) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(text = errorMessage!!, color = Color.Red, modifier = Modifier.padding(16.dp))
+            }
+        } else {
+            val filteredMovies = movies
+                .filter {
+                    (selectedIndustry == "All" || it.industry.equals(selectedIndustry, ignoreCase = true)) &&
+                            (it.name.contains(searchQuery, true) ||
+                                    it.actor.contains(searchQuery, true))
                 }
-            }
-        LazyColumn {
-            items(filteredMovies) { movie ->
-                MovieCard(movie){
-                    navController.navigate("actor/${movie.actor}")
+                .let {
+                    when (sortType) {
+                        "RATING" -> it.sortedByDescending { m -> m.rating }
+                        "COLLECTION" -> it.sortedByDescending { m -> m.collection }
+                        "YEAR" -> it.sortedByDescending { m -> m.year }
+                        else -> it
+                    }
                 }
-            }
 
+            if (filteredMovies.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No movies found")
+                }
+            } else {
+                LazyColumn {
+                    items(filteredMovies) { movie ->
+                        MovieCard(movie) {
+                            navController.navigate("actor/${movie.actor}")
+                        }
+                    }
+                }
+            }
         }
     }
 }
